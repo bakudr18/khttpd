@@ -4,6 +4,7 @@
 .tmp_versions
 *.symvers
 *.mod*
+*.Mod*
 *.order
 *.o
 *.ko

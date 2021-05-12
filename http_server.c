@@ -12,12 +12,12 @@
 #define HTTP_RESPONSE_200_DUMMY                               \
     ""                                                        \
     "HTTP/1.1 200 OK" CRLF "Server: " KBUILD_MODNAME CRLF     \
-    "Content-Type: text/plain" CRLF "Content-Length: 12" CRLF \
+    "Content-Type: text/plain" CRLF "Content-Length: 14" CRLF \
     "Connection: Close" CRLF CRLF "Hello World!" CRLF
 #define HTTP_RESPONSE_200_KEEPALIVE_DUMMY                     \
     ""                                                        \
     "HTTP/1.1 200 OK" CRLF "Server: " KBUILD_MODNAME CRLF     \
-    "Content-Type: text/plain" CRLF "Content-Length: 12" CRLF \
+    "Content-Type: text/plain" CRLF "Content-Length: 14" CRLF \
     "Connection: Keep-Alive" CRLF CRLF "Hello World!" CRLF
 #define HTTP_RESPONSE_501                                              \
     ""                                                                 \

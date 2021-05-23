@@ -3,6 +3,7 @@
 #include <linux/kthread.h>
 #include <linux/sched/signal.h>
 #include <linux/tcp.h>
+#include <linux/workqueue.h>
 
 #include "http_parser.h"
 #include "http_server.h"
@@ -31,6 +32,8 @@
     "Connection: KeepAlive" CRLF CRLF "501 Not Implemented" CRLF
 
 #define RECV_BUFFER_SIZE 4096
+
+static struct http_server_wq wq;
 
 struct http_request {
     struct socket *socket;
@@ -141,7 +144,7 @@ static int http_parser_callback_message_complete(http_parser *parser)
     return 0;
 }
 
-static int http_server_worker(void *arg)
+static int http_server_work(void *arg)
 {
     char *buf;
     struct http_parser parser;
@@ -168,7 +171,7 @@ static int http_server_worker(void *arg)
     request.socket = socket;
     http_parser_init(&parser, HTTP_REQUEST);
     parser.data = &request;
-    while (!kthread_should_stop()) {
+    while (!wq.should_stop) {
         int ret = http_server_recv(socket, buf, RECV_BUFFER_SIZE - 1);
         if (ret <= 0) {
             if (ret)
@@ -185,11 +188,46 @@ static int http_server_worker(void *arg)
     return 0;
 }
 
+static void http_wq_work(struct work_struct *work)
+{
+    struct http_server *worker = container_of(work, struct http_server, work);
+    http_server_work(worker->socket);
+}
+
+static struct work_struct *create_work(struct socket *socket)
+{
+    struct http_server *client;
+
+    client = kmalloc(sizeof(struct http_server), GFP_KERNEL);
+    if (!client)
+        return NULL;
+
+    client->socket = socket;
+    INIT_WORK(&client->work, http_wq_work);
+    list_add(&client->list, &wq.head);
+    return &client->work;
+}
+
+static void destroy_work(void)
+{
+    struct http_server *curr, *tmp;
+    list_for_each_entry_safe (curr, tmp, &wq.head, list) {
+        flush_work(&curr->work);
+        kfree(curr);
+    }
+}
+
 int http_server_daemon(void *arg)
 {
     struct socket *socket;
-    struct task_struct *worker;
+    struct work_struct *work;
     struct http_server_param *param = (struct http_server_param *) arg;
+
+    wq.client_wq = alloc_workqueue("kthhpd_client_wq", WQ_UNBOUND, 0);
+    if (!wq.client_wq)
+        return -ENOMEM;
+    wq.should_stop = false;
+    INIT_LIST_HEAD(&wq.head);
 
     allow_signal(SIGKILL);
     allow_signal(SIGTERM);
@@ -202,11 +240,14 @@ int http_server_daemon(void *arg)
             pr_err("kernel_accept() error: %d\n", err);
             continue;
         }
-        worker = kthread_run(http_server_worker, socket, KBUILD_MODNAME);
-        if (IS_ERR(worker)) {
-            pr_err("can't create more worker process\n");
+        work = create_work(socket);
+        if (!work) {
+            pr_err("can't create more work\n");
             continue;
         }
+        queue_work(wq.client_wq, work);
     }
+    wq.should_stop = true;
+    destroy_work();
     return 0;
 }

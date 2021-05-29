@@ -249,5 +249,6 @@ int http_server_daemon(void *arg)
     }
     wq.should_stop = true;
     destroy_work();
+    destroy_workqueue(wq.client_wq);
     return 0;
 }
